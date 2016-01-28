@@ -1,10 +1,28 @@
-#include <string.h>
-#include <math.h>
+/*
+ * Copyright (C) 2007-2014 Daniel Manrique-Vallier
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 3 of the License, or (at
+ * your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful, but
+ * WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+ * General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program; if not, write to the Free Software
+ * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
+ * Modified by Quanli Wang, 2014
+ */ 
+#include <cstring>
+#include <cmath>
 
 #include "CData.h"
 #include "CLcm.h"
 #include "margin_conditions.h"
-
+#include "R.h" //for ISNAN function
 
 //--------------------------------------------------------------------------------
 // Implementation of class CLcm
@@ -50,7 +68,6 @@ inline
 void CLcm::sam_psi(){
 	int i, j, k, l;
 	std::fill_n(par->aux_dirCumJK[0], data->cumLevelsJ[par->J] * par->K, 0);
-
 	//the data part.
 	for (i = 0; i < data->n; ++i){
 		int k = par->zI[i];
@@ -88,12 +105,15 @@ void CLcm::sam_z(){
 	// any little optimization in the inner loop has a huge impact.
 	//Here we also count how many individuals belong to each class for i <= n.
 	int i, j, k;
-	static int K = par->K;
-	static double probs[1000];
-	//memset(par->countK, 0, sizeof(int)*par->K);// <- Now this is cleared in the X2 section. MAKE SURE OF INITIALIZING IT TO ZEROS.
+	int K = par->K;
+	double *probs = new double[K];
+  if (par->Nmis == 0) { //only needed for no-strutual zeros
+	  memset(par->countK, 0, sizeof(int)*par->K);// <- Now this is cleared in the X2 section. MAKE SURE OF INITIALIZING IT TO ZEROS.
+  }
 	//Z1
 	for (i = 0; i < data->n; ++i){
 		std::copy(par->nuK, par->nuK + K, probs);
+    
 		int *xiJ = par->xIJ[i];
 		for (j = 0; j < par->J; ++j){
 			int l = xiJ[j];
@@ -107,6 +127,7 @@ void CLcm::sam_z(){
 	}
 	par->k_star = K - std::count(par->countK, par->countK + K, 0);
 	//We're sampling Z2 in sam_Z2_X2.
+  delete [] probs;
 }
 inline
 void CLcm::sam_Z2_X2(){
@@ -117,8 +138,8 @@ void CLcm::sam_Z2_X2(){
 	//-all individuals' membership for i >n (Z2)
 	//-Number of individuals in each class for i>n (countK)
 	int c, k, j;
-	static int K = par->K;
-	static double prob[1000];
+	int K = par->K;
+	double *prob = new double[K];
 	
 	
 	//1) sample total number of individuals in each partition.
@@ -156,11 +177,44 @@ void CLcm::sam_Z2_X2(){
 		}
 	}
 	delete [] temp;
+  delete [] prob;
 }
 
 inline
 void CLcm::sam_nu(){
-	int k;
+  int k;
+  double b = 0.0, a = 0.0;
+  int n_acc = 0;
+  double l_acc_prod = 0.0;
+	for (k = 0; k < par->K - 1; ++k){
+		  n_acc += par->countK[k];
+		  a = double(1 + par->countK[k]);
+		  b = par->alpha + double(par->Nmis + data->n - n_acc);
+		  double lgamma1 = SpecialFunctions::log_gamma_rand(a,mt);
+		  double lgamma2 = SpecialFunctions::log_gamma_rand(b,mt);
+		  double lsumgamma = SpecialFunctions::log_sum(lgamma1, lgamma2);
+		  par->log_nuK[k] = (lgamma1 - lsumgamma + l_acc_prod);
+      if (ISNAN(par->log_nuK[k])) {
+        par->log_nuK[k] = -50;
+      }
+      if (par->log_nuK[k] < -50) par->log_nuK[k] = -50;//approx 1e-22
+      
+		  l_acc_prod += lgamma2 - lsumgamma; //log(1-V)
+		  par->nuK[k] = exp(par->log_nuK[k]);
+	}
+	par->log_nuK[par->K -1] = l_acc_prod;
+  if (ISNAN(par->log_nuK[par->K-1])) {
+        par->log_nuK[par->K-1] = -50;
+  }
+  if (par->log_nuK[par->K-1] < -50) par->log_nuK[par->K - 1] = -50;//approx 1e-44
+    
+  par->nuK[par->K - 1] = exp(par->log_nuK[par->K-1]);
+}
+
+/*
+inline
+void CLcm::sam_nu(){
+  int k;
 	double b = 0.0, a = 0.0, lgamma1, lgamma2, lsumgamma;
 	int n_acc = 0;
 	double l_acc_prod = 0.0;
@@ -180,6 +234,7 @@ void CLcm::sam_nu(){
   if (par->log_nuK[par->K-1] < -50) par->log_nuK[par->K - 1] = -50;//approx 1e-44
 	par->nuK[par->K - 1] = exp(par->log_nuK[par->K-1]);
 }
+*/
 
 inline
 void CLcm::sam_alpha(){
@@ -205,12 +260,16 @@ void CLcm::Initializes_no_MCZ(){
 			for (int k = 0; k < par->K; k++)
 				par->psiJKL[par->cumLevelsJ[j]+l][k] = 1.0 / double(par->levelsJ[j]);
 	}
+  sam_z();
+  sam_psi();
+	sam_nu();
 }
 
-void CLcm::Initializes(){
+void CLcm::Initializes(int nwarming){
 	double g1, g2, gs;
 	par->initizalize(mt);
 	par->alpha = 1.0;
+  NmisOverflow = 0;
 	double lacc = 0.0;
 	for (int k = 0; k < par->K - 1; k++){
 		g1 = SpecialFunctions::log_gamma_rand(1.0,mt);
@@ -244,7 +303,7 @@ void CLcm::Initializes(){
 	for(int k = 4; k < par->K; k++){
 		par->nuK[k] = 0.1 / double (par->K -4);
 	}
-	for (int i = 0; i < 500; ++i){
+	for (int i = 0; i < nwarming; ++i){
 		sam_z();
 		sam_psi();
 		sam_nu();
@@ -253,6 +312,7 @@ void CLcm::Initializes(){
 		sam_Nmis();
 		sam_Z2_X2();
 	}
+  
 	//reorder decreasingly according to nuK. 
 	std::vector<_mypair> s_index(par->K);
 	for (int k = 0; k < par->K; k++){
@@ -304,7 +364,7 @@ void CLcm::Initializes(){
 	for (int i = 0; i < par->Nmis; ++i){
 		par->z2_Nmax[i] = par_temp->z2_Nmax[i];
 	}
-	NmisOverflow = 0;
+	
 }
 
 

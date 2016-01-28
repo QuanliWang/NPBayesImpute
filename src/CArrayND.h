@@ -1,3 +1,22 @@
+/*
+ * Copyright (C) 2007-2014 Daniel Manrique-Vallier
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 3 of the License, or (at
+ * your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful, but
+ * WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+ * General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program; if not, write to the Free Software
+ * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
+ * Modified by Quanli Wang, 2014
+ */ 
+
 #ifndef _CARRAYND_H
 #define _CARRAYND_H
 
@@ -9,8 +28,9 @@
 #include <vector>
 #include <fstream>
 #include <string>
-#include <stdio.h>
+#include <cstdio>
 #include <algorithm>
+#include <cstring>
 
 template<typename T>
 class CArrayND{
@@ -32,7 +52,7 @@ public:
 		}
 	}
 	
-	static void* CreateArray(int dims, ...) {
+	static CArrayND<T>* CreateArray(int dims, ...) {
 		int lengths[20], i;
 		va_list args;
 		va_start(args, dims);
@@ -40,7 +60,7 @@ public:
 			lengths[i] = va_arg(args, int);
 		}
 		va_end(args);
-		return (new CArrayND<T>(dims, lengths))->data;
+		return (new CArrayND<T>(dims, lengths));
 	}
 	
 	static void *flat2arrayND(void* data, int size_elem, int dims, ...){

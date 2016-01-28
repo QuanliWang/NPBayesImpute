@@ -1,9 +1,26 @@
+/*
+ * Copyright (C) 2014 Quanli Wang
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 3 of the License, or (at
+ * your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful, but
+ * WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+ * General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program; if not, write to the Free Software
+ * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
+ */ 
 #include <Rcpp.h>
 #include <R_ext/Utils.h>
 #include <set>
 #include "CData.h"
 #include "CLcm.h"
-#include "Ctrace.h"
+#include "CTrace.h"
 #include "CEnv.h"
 
 typedef std::vector<int> intvec;
@@ -68,10 +85,10 @@ void CEnv::Update() {
 	}
 }
 
-void CEnv::Initialize() {
+void CEnv::Initialize(int nWarming) {
   if (m->par->N_mis_max > 0) {
     Rprintf( "Run model with structural zeros.\n");
-    m->Initializes();
+    m->Initializes(nWarming);
   } else {
     Rprintf( "Run model without structural zeros.\n");
     m->Initializes_no_MCZ();
@@ -124,41 +141,28 @@ Rcpp::List CEnv::GetTrace() {
 		}
 		if (list_[p] == "psi") {
 			int size = m->par->K * m->par->cumLevelsJ[m->par->J];
-			/*
-			Rcpp::NumericMatrix psi(t->mnindex,size);
-			for (int i = 0; i < t->mnindex; i++) {
-				for (int j = 0; j < size; j++) {
-					psi(i,j) = t->trace[p][i*size+ j];
-				}
-			}
-			result("psi") = psi;
-			*/
-
+      
 			Rcpp::Dimension d(m->par->J*m->par->K*m->par->L,t->mnindex);
 			Rcpp::NumericVector psi4d(d);
 
 			int size_new = m->par->J*m->par->K*m->par->L;
 			for (int s = 0; s < t->mnindex; s++) {
-				for (int k = 0; k < m->par->K; k++) {
-					for (int  j= 0; j < m->par->J; j++) {
-						for (int l = 0; l < m->par->levelsJ[j]; l++) {
-							psi4d[j + k * m->par->J + l * m->par->J * m->par->K + s*size_new] = t->trace[p][size * s + (m->par->cumLevelsJ[j]+l) * m->par->K + k];
-						}
-						for (int  l = m->par->levelsJ[j]; l <m->par->L;l++) {
-							psi4d[j + k * m->par->J + l * m->par->J * m->par->K + s*size_new] = NA_REAL;
-						}
-					}
-				}
+        for (int k = 0; k < m->par->K; k++) {
+  			  for (int  j= 0; j < m->par->J; j++) {
+					  for (int l = 0; l < m->par->levelsJ[j]; l++) {
+						  psi4d[l + k * m->par->L + j * m->par->L * m->par->K + s*size_new] = t->trace[p][size * s + (m->par->cumLevelsJ[j]+l) * m->par->K + k];
+					  }
+					  for (int  l = m->par->levelsJ[j]; l <m->par->L;l++) {
+						  psi4d[l + k * m->par->L + j * m->par->L * m->par->K + s*size_new] = NA_REAL;
+					  }
+				  }
+			  }
 			}
 			
-
-			//result("psi") = psi4d;
 			Rcpp::NumericVector d4(4);
-			d4[0] = m->par->J; d4[1] = m->par->K; d4[2]= m->par->L; d4[3] =t->mnindex;
+			d4[0] = m->par->L; d4[1] = m->par->K; d4[2]= m->par->J; d4[3] =t->mnindex;
 			psi4d.attr("dim") = d4;
 			result("psi") = psi4d;
-
-			//result("psi_dim") = d4;
 		}
 	}
 	return result;
@@ -201,16 +205,6 @@ Rcpp::List CEnv::GetParameters(std::vector< std::string > list_) {
 			result("ImputedX") = ImputedX;
 		}
 		if (list_[p] == "psi") {
-			/*
-			int cumJ = m->par->cumLevelsJ[m->par->J];
-			Rcpp::NumericMatrix psi(cumJ,m->par->K);
-			for (int i = 0; i < cumJ; i++) {
-				for (int j = 0; j < m->par->K; j++) {
-					psi(i,j) = m->par->psiJKL[i][j];
-				}
-			}
-			result("psi") = psi;
-			*/
 			Rcpp::Dimension d(m->par->L,m->par->K,m->par->J);
 			Rcpp::NumericVector psi3d(d);
 			for (int k = 0; k < m->par->K; k++) {
@@ -223,7 +217,6 @@ Rcpp::List CEnv::GetParameters(std::vector< std::string > list_) {
 					}
 				}
 			}
-			
 			result("psi") = psi3d;
 		}
 	}
@@ -273,7 +266,13 @@ void CEnv::Resume() {
 void CEnv::Run(int burnin, int iter, int thining) {
 	mnburnin = burnin;
 	if (mniters  == 0) { //only do Initialize once if mniters was not set
-		Initialize();	
+    Rprintf( "Initializing...\n");
+    if (burnin == 1) {
+      Initialize(1); // for short testing     
+    } else {
+      Initialize(500);    
+    }
+		
 		t->PrepareTrace();
 		Rprintf( "iter = %d  kstar = %d alpha = %g Nmis = %d\n", mniters, m->par->k_star,m->par->alpha, m->par->Nmis ) ;
 		mnsaved = 0; //just for consistance 

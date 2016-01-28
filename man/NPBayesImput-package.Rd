@@ -24,7 +24,7 @@ Package: \tab NPBayesImpute\cr
 Type: \tab Package\cr
 Version: \tab 0.1\cr
 Date: \tab 2014-04-05\cr
-License: \tab GPL(>=2) \cr
+License: \tab GPL(>=3) \cr
 }
 }
 
@@ -34,8 +34,33 @@ Quanli Wang, Daniel Manrique-Vallier, Jerome P. Reiter and Jingchen Hu
 Maintainer: Quanli Wang<quanli@stat.duke.edu>
 }
 \references{
-  http://www.tandfonline.com/doi/full/10.1080/10618600.2013.844700   
-	\cr
-  http://www.stat.duke.edu/~jerry/Papers/SurvMeth14.pdf
+  Manrique-Vallier, D. and Reiter, J.P. (2013), "Bayesian Estimation of Discrete Multivariate Latent Structure Models with Structural Zeros", JCGS. 
+  \cr\cr
+  Si, Y. and Reiter, J.P. (2013), "Nonparametric Bayesian multiple imputation for incomplete categorical variables in large-scale assessment surveys", Journal of Educational and Behavioral Statistics, 38, 499 - 521 
+  \cr\cr
+  Manrique-Vallier, D. and Reiter, J.P. (2014), "Bayesian Multiple Imputation for Large-Scale Categorical Data with Structural Zeros", Survey Methodology.
 }
 \keyword{ package }
+\examples{
+require(NPBayesImpute)
+#Please use NYexample data set for a more realistic example
+data('NYMockexample')
+
+#create the model
+model <- CreateModel(X,MCZ,10,10000,0.25,0.25)
+
+#run 1 burnins, 2 mcmc iterations and thin every 2 iterations
+model$Run(1,2,2)
+
+#retrieve parameters from the final iteration
+result <- model$snapshot
+
+#convert ImputedX matrix to dataframe, using proper factors/names etc.
+ImputedX <- GetDataFrame(result$ImputedX,X)
+#View(ImputedX)
+
+#Most exhauststic examples can be found in the demo below
+#demo(example_short)
+#demo(example)
+
+}
